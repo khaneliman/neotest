@@ -16,6 +16,14 @@ function Watcher:new(lsp_client)
   return setmetatable(obj, self)
 end
 
+function Watcher._buf_path(bufnr)
+  local name = nio.api.nvim_buf_get_name(bufnr)
+  if name == "" then
+    return
+  end
+  return lib.files.path.real(name) or nio.fn.fnamemodify(name, ":p")
+end
+
 ---@return integer[][]
 function Watcher._parse_symbols(path)
   logger.debug("Parsing symbols for", path)
@@ -117,7 +125,17 @@ function Watcher:_build_dependencies(root, paths, args, dependencies)
       if not dependencies[path] then
         count = count + 1
         dependencies[path] = {}
-        local path_results = self:_get_linked_files(path, root, args)
+        local ok, path_results = xpcall(function()
+          return self:_get_linked_files(path, root, args)
+        end, debug.traceback)
+        if not ok then
+          logger.error("Failed to inspect watch dependencies for", path, path_results)
+          lib.notify(
+            ("Error inspecting watch dependencies for %s: %s"):format(path, path_results),
+            vim.log.levels.ERROR
+          )
+          path_results = { path }
+        end
         dependencies[path] = path_results
 
         for _, p in ipairs(path_results) do
@@ -170,7 +188,10 @@ function Watcher:watch(tree, args)
         return
       end
       nio.run(function()
-        local path = nio.fn.expand(nio.api.nvim_buf_get_name(autocmd_args.buf), ":p")
+        local path = Watcher._buf_path(autocmd_args.buf)
+        if not path then
+          return
+        end
 
         local buf_dependants = dependants[path]
         if not buf_dependants then
