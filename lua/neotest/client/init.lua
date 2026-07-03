@@ -54,6 +54,24 @@ function neotest.Client:new(adapters)
   return client
 end
 
+local function safe_adapter_call(adapter, method, context, ...)
+  local fn = adapter[method]
+  if type(fn) ~= "function" then
+    return
+  end
+
+  local ok, result = xpcall(fn, debug.traceback, ...)
+  if not ok then
+    logger.error(
+      ("Adapter %s failed in %s for %s"):format(adapter.name or "<unknown>", method, context),
+      result
+    )
+    return
+  end
+
+  return result
+end
+
 ---@class neotest.client.RunTreeArgs
 ---@field adapter? string Adapter ID, if not given the first adapter found with chosen position is used.
 ---@field strategy? "integrated"|"dap"|string|neotest.Strategy Strategy to run commands with
@@ -270,14 +288,19 @@ function neotest.Client:_update_positions(path, args)
       logger.info("Searching", path, "for test files")
       local root_path = existing_root and existing_root:data().path or path
       local files = lib.func_util.filter_list(
-        adapter.is_test_file,
+        function(file_path)
+          return safe_adapter_call(adapter, "is_test_file", file_path, file_path)
+        end,
 
         lib.files.find(path, {
-          filter_dir = function(...)
-            return (not adapter.filter_dir or adapter.filter_dir(...))
+          filter_dir = function(name, rel_path, root)
+            return (
+              not adapter.filter_dir
+              or safe_adapter_call(adapter, "filter_dir", rel_path, name, rel_path, root)
+            )
               and (
                 not config.projects[root_path].discovery.filter_dir
-                or config.projects[root_path].discovery.filter_dir(...)
+                or config.projects[root_path].discovery.filter_dir(name, rel_path, root)
               )
           end,
         })
@@ -297,7 +320,13 @@ function neotest.Client:_update_positions(path, args)
       self._state:update_positions(adapter_id, positions)
     end
   end, function(msg)
-    logger.error("Couldn't find positions in path", path, debug.traceback(msg, 2))
+    logger.error(
+      "Couldn't find positions for adapter",
+      adapter.name,
+      "in path",
+      path,
+      debug.traceback(msg, 2)
+    )
   end)
 end
 
@@ -336,7 +365,10 @@ function neotest.Client:_get_adapter(position_id, adapter_id)
       local root = self._state:positions(a_id)
       if
         (not root or vim.startswith(position_id, root:data().path))
-        and (lib.files.is_dir(position_id) or adapter.is_test_file(position_id))
+        and (
+          lib.files.is_dir(position_id)
+          or safe_adapter_call(adapter, "is_test_file", position_id, position_id)
+        )
       then
         return a_id, adapter
       end
@@ -527,7 +559,7 @@ function neotest.Client:_update_open_buf_positions(adapter_id)
   for _, bufnr in ipairs(nio.api.nvim_list_bufs()) do
     local name = nio.api.nvim_buf_get_name(bufnr)
     local file_path = lib.files.path.real(name) or name
-    if adapter.is_test_file(file_path) then
+    if safe_adapter_call(adapter, "is_test_file", file_path, file_path) then
       self:_update_positions(file_path, { adapter = adapter_id })
     end
   end

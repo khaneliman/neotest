@@ -3,6 +3,7 @@ local a = nio.tests
 local stub = require("luassert.stub")
 local Tree = require("neotest.types").Tree
 local lib = require("neotest.lib")
+local logger = require("neotest.logging")
 local NeotestClient = require("neotest.client")
 local AdapterGroup = require("neotest.adapters")
 
@@ -158,6 +159,79 @@ describe("neotest client", function()
       require("neotest").setup_project(dir, { adapters = {} })
       local tree = get_pos(dir)
       assert.Nil(tree)
+    end)
+
+    a.it("continues when an adapter errors while matching test files", function()
+      local errors = {}
+      local logger_error = stub(logger, "error", function(...)
+        errors[#errors + 1] = { ... }
+      end)
+      local ok, err = pcall(function()
+        local bad_adapter = vim.tbl_extend("force", mock_adapter, {
+          name = "bad-adapter",
+          is_test_file = function(path)
+            error("bad match " .. path)
+          end,
+        })
+
+        require("neotest").setup({ adapters = { bad_adapter, mock_adapter } })
+
+        local tree = get_pos(dir)
+        assert.Not.Nil(tree:get_key(dir .. "/test_file_1"))
+
+        local logged = false
+        for _, call in ipairs(errors) do
+          local message = vim.inspect(call)
+          if
+            message:find("bad%-adapter")
+            and message:find("is_test_file")
+            and message:find("test_file_1")
+          then
+            logged = true
+          end
+        end
+        assert.True(logged)
+      end)
+      logger_error:revert()
+      assert(ok, err)
+    end)
+
+    a.it("continues when an adapter errors while discovering positions", function()
+      local errors = {}
+      local logger_error = stub(logger, "error", function(...)
+        errors[#errors + 1] = { ... }
+      end)
+      local ok, err = pcall(function()
+        local bad_adapter = vim.tbl_extend("force", mock_adapter, {
+          name = "bad-adapter",
+          is_test_file = function()
+            return true
+          end,
+          discover_positions = function(path)
+            error("bad discover " .. path)
+          end,
+        })
+
+        require("neotest").setup({ adapters = { bad_adapter, mock_adapter } })
+
+        local tree = get_pos(dir)
+        assert.Not.Nil(tree:get_key(dir .. "/test_file_1"))
+
+        local logged = false
+        for _, call in ipairs(errors) do
+          local message = vim.inspect(call)
+          if
+            message:find("bad%-adapter")
+            and message:find("Couldn't find positions")
+            and message:find("test_file_1")
+          then
+            logged = true
+          end
+        end
+        assert.True(logged)
+      end)
+      logger_error:revert()
+      assert(ok, err)
     end)
 
     a.it("updates files when first requested", function()

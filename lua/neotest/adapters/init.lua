@@ -7,10 +7,28 @@ local lib = require("neotest.lib")
 ---@field adapters neotest.Adapter[]
 local AdapterGroup = {}
 
+local function safe_adapter_call(adapter, method, context, ...)
+  local fn = adapter[method]
+  if type(fn) ~= "function" then
+    return
+  end
+
+  local ok, result = xpcall(fn, debug.traceback, ...)
+  if not ok then
+    logger.error(
+      ("Adapter %s failed in %s for %s"):format(adapter.name or "<unknown>", method, context),
+      result
+    )
+    return
+  end
+
+  return result
+end
+
 function AdapterGroup:adapters_with_root_dir(cwd)
   local adapters = {}
   for _, adapter in ipairs(self:_path_adapters(cwd)) do
-    local root = adapter.root(cwd)
+    local root = safe_adapter_call(adapter, "root", cwd, cwd)
     if root then
       table.insert(adapters, { adapter = adapter, root = root })
     end
@@ -46,7 +64,7 @@ function AdapterGroup:adapters_matching_open_bufs(existing_roots)
   for _, path in ipairs(paths) do
     if path and not is_under_roots(path) then
       for _, adapter in ipairs(self:_path_adapters(path)) do
-        if adapter.is_test_file(path) and not matched_files[path] then
+        if safe_adapter_call(adapter, "is_test_file", path, path) and not matched_files[path] then
           logger.info("Adapter", adapter.name, "matched buffer", path)
           matched_files[path] = true
           table.insert(adapters, adapter)
@@ -60,7 +78,7 @@ end
 
 function AdapterGroup:adapter_matching_path(path)
   for _, adapter in ipairs(self:_path_adapters(path)) do
-    if adapter.is_test_file(path) then
+    if safe_adapter_call(adapter, "is_test_file", path, path) then
       logger.info("Adapter", adapter.name, "matched path", path)
       return adapter
     end
