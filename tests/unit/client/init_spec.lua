@@ -256,6 +256,65 @@ describe("neotest client", function()
         tree = get_pos(dir .. "/test_file_2")
         assert.Not.Nil(tree)
       end)
+
+      a.it("doesn't scan directories when new test buffers are added", function()
+        lib.files.find:revert()
+        local find_calls = {}
+        stub(lib.files, "find", function(path)
+          find_calls[#find_calls + 1] = path
+          return files
+        end)
+
+        require("neotest").setup({
+          adapters = { mock_adapter },
+          discovery = { enabled = false },
+        })
+
+        assert.Nil(get_pos(dir))
+        vim.cmd("edit " .. dir .. "/test_file_1")
+        assert.Not.Nil(get_pos(dir .. "/test_file_1"))
+        vim.cmd("edit " .. dir .. "/test_file_2")
+        nio.sleep(10)
+
+        assert.same({}, find_calls)
+      end)
+
+      a.it("ignores non-file buffers", function()
+        require("neotest").setup({
+          adapters = { mock_adapter },
+          discovery = { enabled = false },
+        })
+        client:_ensure_started()
+
+        local update_positions_stub = stub(client, "_update_positions")
+        local buf = vim.api.nvim_create_buf(false, true)
+        vim.api.nvim_buf_set_name(buf, dir .. "/test_file_1")
+        vim.api.nvim_buf_set_option(buf, "buftype", "nofile")
+
+        vim.api.nvim_exec_autocmds("BufAdd", { buffer = buf, modeline = false })
+        nio.sleep(10)
+
+        assert.stub(client._update_positions).was_not_called()
+        update_positions_stub:revert()
+      end)
+
+      a.it("ignores directory buffers", function()
+        require("neotest").setup({
+          adapters = { mock_adapter },
+          discovery = { enabled = false },
+        })
+        client:_ensure_started()
+
+        local update_positions_stub = stub(client, "_update_positions")
+        local buf = vim.api.nvim_create_buf(false, true)
+        vim.api.nvim_buf_set_name(buf, dir)
+
+        vim.api.nvim_exec_autocmds("BufAdd", { buffer = buf, modeline = false })
+        nio.sleep(10)
+
+        assert.stub(client._update_positions).was_not_called()
+        update_positions_stub:revert()
+      end)
     end)
 
     describe("adapter discovery for paths outside cwd", function()

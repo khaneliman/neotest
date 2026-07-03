@@ -54,6 +54,45 @@ function neotest.Client:new(adapters)
   return client
 end
 
+local function is_normal_file_buffer(bufnr)
+  if not bufnr then
+    return true
+  end
+  local ok, buftype = pcall(nio.api.nvim_buf_get_option, bufnr, "buftype")
+  return ok and buftype == ""
+end
+
+local function event_file_path(ev, opts)
+  opts = opts or {}
+  if not ev.file or ev.file == "" or not is_normal_file_buffer(ev.buf) then
+    return
+  end
+
+  local file_path = vim.fn.fnamemodify(ev.file, ":p")
+  if file_path == "" or lib.files.is_dir(file_path) then
+    return
+  end
+
+  if not opts.allow_missing and not lib.files.exists(file_path) then
+    return
+  end
+
+  return file_path
+end
+
+local function current_file_path()
+  if not is_normal_file_buffer(nio.api.nvim_get_current_buf()) then
+    return
+  end
+
+  local path = nio.fn.expand("%:p")
+  if path == "" or lib.files.is_dir(path) or not lib.files.exists(path) then
+    return
+  end
+
+  return path
+end
+
 ---@class neotest.client.RunTreeArgs
 ---@field adapter? string Adapter ID, if not given the first adapter found with chosen position is used.
 ---@field strategy? "integrated"|"dap"|string|neotest.Strategy Strategy to run commands with
@@ -398,13 +437,8 @@ function neotest.Client:_start(args)
   end
 
   autocmd({ "BufAdd", "BufWritePost" }, function(ev)
-    if ev.file == "" then
-      return
-    end
-
-    local file_path = vim.fn.fnamemodify(ev.file, ":p")
-
-    if not lib.files.exists(file_path) then
+    local file_path = event_file_path(ev)
+    if not file_path then
       return
     end
 
@@ -461,10 +495,12 @@ function neotest.Client:_start(args)
   end)
 
   autocmd({ "BufAdd", "BufDelete" }, function(ev)
-    if ev.file == "" then
+    local file_path = event_file_path(ev, { allow_missing = true })
+    if not file_path then
       return
     end
-    local updated_dir = vim.fn.fnamemodify(ev.file, ":p:h")
+
+    local updated_dir = lib.files.parent(file_path)
     nio.run(function()
       local adapter_id = self:_get_adapter(updated_dir, nil)
       if not adapter_id then
@@ -478,12 +514,8 @@ function neotest.Client:_start(args)
   end)
 
   autocmd("BufEnter", function(ev)
-    if ev.file == "" then
-      return
-    end
-    local path = vim.fn.fnamemodify(ev.file, ":p")
-
-    if not lib.files.exists(path) then
+    local path = event_file_path(ev)
+    if not path then
       return
     end
 
@@ -493,14 +525,11 @@ function neotest.Client:_start(args)
   end)
 
   autocmd({ "CursorHold", "BufEnter" }, function()
-    if vim.fn.expand("%") == "" then
+    local path = current_file_path()
+    if not path then
       return
     end
-    local path, line = vim.fn.expand("%:p"), vim.fn.line(".")
-
-    if not lib.files.exists(path) then
-      return
-    end
+    local line = vim.fn.line(".")
 
     nio.run(function()
       local pos, pos_adapter_id = self:get_nearest(path, line - 1)
@@ -515,7 +544,10 @@ function neotest.Client:_start(args)
 
   local run_time = (vim.loop.now() - start) / 1000
   logger.info("Initialisation finished in", run_time, "seconds")
-  self:_set_focused_file(nio.fn.expand("%:p"))
+  local focused_file = current_file_path()
+  if focused_file then
+    self:_set_focused_file(focused_file)
+  end
   self._events:emit("started")
   return run_time
 end
