@@ -249,10 +249,13 @@ function TestRunner:_missing_results(tree, results, partial)
       local parent_result = results_proxy[parent_pos.id]
       local pos_result = results_proxy[node:data().id]
       if not parent_result then
-        parent_result = { status = "passed" }
+        parent_result = { status = pos_result.status }
       end
 
-      if pos_result.status ~= "skipped" and parent_result.status == "passed" then
+      if
+        pos_result.status ~= "skipped"
+        and (parent_result.status == "passed" or parent_result.status == "skipped")
+      then
         parent_result.status = pos_result.status
       end
 
