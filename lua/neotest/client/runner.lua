@@ -1,6 +1,7 @@
 local nio = require("nio")
 local config = require("neotest.config")
 local logger = require("neotest.logging")
+local path_maps = require("neotest.lib.path_maps")
 
 ---@class neotest.TestRunner
 ---@field _processes neotest.ProcessTracker
@@ -102,6 +103,10 @@ end
 ---@param spec neotest.RunSpec
 ---@param adapter neotest.Adapter
 function TestRunner:_run_spec(spec, tree, args, adapter_id, adapter, results_callback)
+  local root = tree:root():data().path
+  local maps = config.projects[root].path_maps
+  path_maps.map_spec_to_remote(spec, maps)
+
   if type(spec.strategy) == "function" then
     args = vim.tbl_extend("keep", { strategy = spec.strategy }, args)
   else
@@ -124,12 +129,13 @@ function TestRunner:_run_spec(spec, tree, args, adapter_id, adapter, results_cal
   local stream_processor = spec.stream
     and function(stream)
       for stream_results in spec.stream(stream) do
+        stream_results = path_maps.map_results_to_local(stream_results, maps)
         results_callback(tree, stream_results)
       end
     end
   local process_result = self._processes:run(proc_key, spec, args, stream_processor, context)
 
-  local results = adapter.results(spec, process_result, tree)
+  local results = path_maps.map_results_to_local(adapter.results(spec, process_result, tree), maps)
 
   results_callback(tree, results, process_result.output)
 end

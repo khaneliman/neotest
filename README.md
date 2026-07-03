@@ -157,6 +157,17 @@ require("neotest").setup({
 })
 ```
 
+If tests run in a container or remote environment, map local project paths to the
+paths reported by the runner:
+
+```lua
+require("neotest").setup({
+  path_maps = {
+    { local_root = "/Users/me/project", remote_root = "/app" },
+  },
+})
+```
+
 See `:h neotest.Config` for configuration options and `:h neotest.setup()` for the default values.
 
 It is highly recommended to use [lazydev.nvim](https://github.com/folke/lazydev.nvim) to enable type checking for neotest to get

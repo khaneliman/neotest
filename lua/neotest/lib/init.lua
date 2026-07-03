@@ -65,6 +65,10 @@ neotest.lib.positions = lazy_require("neotest.lib.positions")
 ---@nodoc
 neotest.lib.process = lazy_require("neotest.lib.process")
 
+---@module 'neotest.lib.path_maps''
+---@nodoc
+neotest.lib.path_maps = lazy_require("neotest.lib.path_maps")
+
 ---@module 'neotest.lib.subprocess''
 ---@nodoc
 neotest.lib.subprocess = lazy_require("neotest.lib.subprocess")

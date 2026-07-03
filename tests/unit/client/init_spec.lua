@@ -307,6 +307,59 @@ describe("neotest client", function()
         client:run_tree(tree, { strategy = mock_strategy, cwd = "new_cwd" })
         assert.equal(provided_spec.cwd, "new_cwd")
       end)
+
+      a.it("maps local command paths to remote paths", function()
+        require("neotest").setup({
+          adapters = { mock_adapter },
+          path_maps = {
+            { local_root = dir, remote_root = "/app" },
+          },
+        })
+        mock_adapter.build_spec = function()
+          return {
+            command = { dir .. "/test_file_1", "--root", dir .. "/subdir" },
+            cwd = dir,
+            strategy = { output = "not_a_file" },
+          }
+        end
+
+        local tree = get_pos(dir)
+        exit_future.set()
+        client:run_tree(tree, { strategy = mock_strategy })
+
+        assert.same({ "/app/test_file_1", "--root", "/app/subdir" }, provided_spec.command)
+        assert.equal("/app", provided_spec.cwd)
+      end)
+
+      a.it("maps remote result paths to local paths", function()
+        require("neotest").setup({
+          adapters = { mock_adapter },
+          path_maps = {
+            { local_root = dir, remote_root = "/app" },
+          },
+        })
+        mock_adapter.results = function()
+          return {
+            ["/app/test_file_1::test_a"] = {
+              status = "failed",
+              output = "/app/output.log",
+              errors = {
+                { message = "failure", path = "/app/test_file_1", line = 10 },
+              },
+            },
+          }
+        end
+
+        local tree = get_pos(dir .. "/test_file_1")
+        exit_future.set()
+        client:run_tree(tree, { strategy = mock_strategy })
+
+        local adapter_id = client:get_adapters()[1]
+        local result = client:get_results(adapter_id)[dir .. "/test_file_1::test_a"]
+        assert.equal("failed", result.status)
+        assert.equal(dir .. "/output.log", result.output)
+        assert.equal(dir .. "/test_file_1", result.errors[1].path)
+      end)
     end)
 
     a.it("reports running positions", function()

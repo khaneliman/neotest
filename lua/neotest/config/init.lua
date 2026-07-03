@@ -46,6 +46,7 @@ local js_watch_query = [[
 ---@field discovery neotest.Config.discovery
 ---@field running neotest.Config.running
 ---@field default_strategy string|function
+---@field path_maps neotest.Config.path_map[]
 
 ---@class neotest.Config : neotest.CoreConfig
 ---@field log_level number Minimum log levels, one of vim.log.levels
@@ -73,6 +74,10 @@ local js_watch_query = [[
 
 ---@class neotest.Config.running
 ---@field concurrent boolean Run tests concurrently when an adapter provides multiple commands to run
+
+---@class neotest.Config.path_map
+---@field local_root string Local path prefix.
+---@field remote_root string Remote path prefix.
 
 ---@alias neotest.Consumer fun(client: neotest.Client): table
 
@@ -167,6 +172,7 @@ local default_config = {
   running = {
     concurrent = true,
   },
+  path_maps = {},
   consumers = {},
   icons = {
     -- Ascii:
@@ -488,6 +494,7 @@ function NeotestConfigModule.setup_project(project_root, config)
     discovery = user_config.discovery,
     running = user_config.running,
     default_strategy = user_config.default_strategy,
+    path_maps = user_config.path_maps,
   })
   user_config.projects[path].discovery.concurrent =
     convert_concurrent(user_config.projects[path].discovery.concurrent)
